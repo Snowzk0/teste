@@ -1,0 +1,1978 @@
+-- ========================================
+-- ACS CLIENT - COMPLETE REWRITE
+-- Advanced Combat System - Client Side
+-- ========================================
+local game = game
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local UserInputService = game:GetService("UserInputService")
+local HapticService = game:GetService("HapticService")
+local SoundService = game:GetService("SoundService")
+local StarterPlayer = game:GetService("StarterPlayer")
+local GamepadService = game:GetService("GamepadService")
+-- ========================================
+-- SERVICES E MÓDULOS
+-- ========================================
+local DebrisGobbler = require(ReplicatedStorage:WaitForChild("DebrisGobbler"))
+local TablesModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Tables"))
+local HitmarkerModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Hitmarker"))
+local GunSoundsModule = require(ReplicatedStorage:WaitForChild("Modules"):WaitForChild("Gun Sounds"))
+local DamageDisplayModule = require(ReplicatedStorage:WaitForChild("BulletFireSystem"):WaitForChild("DamageDisplay"))
+local CamoTextures = TablesModule.CamoTextures
+local CreateSound = GunSoundsModule.CreateSound
+local soundDistances = GunSoundsModule.soundDistances
+-- ACS Engine
+local ACS_Engine = ReplicatedStorage:WaitForChild("ACS_Engine")
+local Events = ACS_Engine:WaitForChild("Eventos")
+local GunModels = ACS_Engine:WaitForChild("GunModels")
+local SpringModule = require(ACS_Engine:WaitForChild("Modules"):WaitForChild("Spring"))
+local Config = require(ACS_Engine.ServerConfigs:WaitForChild("Config"))
+local UtilitiesModule = require(ACS_Engine:WaitForChild("Modules"):WaitForChild("Utilities"))
+local SetupModule = require(ACS_Engine:WaitForChild("Modules"):WaitForChild("SetupModule"))
+-- Workspaces
+local ACS_WorkSpace = Workspace:WaitForChild("Game Systems"):WaitForChild("ACS_WorkSpace")
+local ServerFolder = ACS_WorkSpace:FindFirstChild("Server")
+local ClientFolder = ACS_WorkSpace:FindFirstChild("Client")
+local ACS_Guns = ReplicatedStorage.Configurations.ACS_Guns
+-- Bullet Fire System
+local BulletFireSystem = ReplicatedStorage:WaitForChild("BulletFireSystem")
+local FireModuleClient = require(script:WaitForChild("FireModuleClient"))
+local FireGunEvent = BulletFireSystem:WaitForChild("FireGun")
+local BulletFiredEvent = BulletFireSystem:WaitForChild("BulletFired")
+local BulletHitEvent = BulletFireSystem:WaitForChild("BulletHit")
+-- Camera & Player
+local CurrentCamera = Workspace.CurrentCamera
+local MainSoundGroup = SoundService:WaitForChild("Main")
+local LocalPlayer = Players.LocalPlayer
+repeat task.wait(0.05) until LocalPlayer.Character
+-- Character Setup
+local Character = LocalPlayer.Character
+local Humanoid = Character:WaitForChild("Humanoid")
+local HumanoidRootPart = Character:WaitForChild("HumanoidRootPart")
+local Stances = Character:WaitForChild("Saude"):WaitForChild("Stances")
+local Terrain = Workspace.Terrain
+-- Startup Module
+local StartupModule = require(script:WaitForChild("Startup"))
+local CameraViewModel = StartupModule.Initialize()
+local SensitivityModule = require(script:WaitForChild("Sensitivity"))
+local ChangeSensitivity = SensitivityModule.ChangeSensitivity
+local SniperFocusModule = require(script:WaitForChild("SniperFocus"))
+-- Settings
+local SettingsFolder = LocalPlayer:WaitForChild("SettingsFolder")
+local bulletShells = SettingsFolder:WaitForChild("bulletShells")
+local objectHitmarker = SettingsFolder:WaitForChild("objectHitmarker")
+-- UI Setup
+local PlayerGui = LocalPlayer.PlayerGui
+local StatusUI = ACS_Engine:WaitForChild("HUD"):WaitForChild("StatusUI"):Clone()
+StatusUI.Parent = PlayerGui
+local Crosshair = StatusUI:WaitForChild("Crosshair")
+local GunHUD
+local MobileUI
+-- ========================================
+-- CONFIGURAÇÕES GLOBAIS
+-- ========================================
+_G.GunEquipped = false
+local IGNORED_PARTS = {
+	Ignorable = true, Ignore = true,
+	Seat1 = true, Seat2 = true, Seat3 = true, Seat4 = true, Seat5 = true, Seat6 = true,
+	DriveSeat = true, Armor = true, EShield = true,
+	FL = true, FR = true, BB = true, BR = true, BL = true,
+	Light = true, Gradient = true,
+	AntiHelicopterField = true, HelicopterKillField = true,
+}
+local EXPLOSIVE_WEAPONS = {"RPG", "Javelin", "Stinger", "Grenade Launcher"}
+-- ========================================
+-- VARIÁVEIS DE ESTADO
+-- ========================================
+local var32_upvw = nil -- CurrentTool
+local var33_upvw = nil -- CurrentToolClone
+local var47_upvw = nil -- CurrentSettings
+local var48_upvw = nil -- CurrentAnimations
+local var187_upvw = nil -- GunConfig
+local var89_upvw = nil -- AnimBaseModel
+local var87_upvw = nil -- AnimBase
+local var88_upvw = nil -- AnimBaseWeld
+local var90_upvw = nil -- CloneMotor
+local var51_upvw = false -- isEquipped
+local var80_upvw = false -- isAiming
+local var31_upvw = false -- isSprinting
+local var77_upvw = false -- isReloading
+local var75_upvw = true -- canFire
+local var76_upvw = false -- isAnimating
+local var81_upvw = false -- isChamberingRound
+local var79_upvw = false -- isHeadshot
+local var82_upvw = 0 -- currentAimState
+local var72_upvw = 1 -- currentScope
+local var73_upvw = 0 -- currentMovementSpeed
+local var62_upvw = 0 -- FireRate
+local var63_upvw = 0 -- BurstFireRate
+local var55_upvw = 0 -- VRecoil
+local var56_upvw = 0 -- HRecoil
+local var57_upvw = 0 -- VPunchBase
+local var58_upvw = 0 -- HPunchBase
+local var59_upvw = 0 -- DPunchBase
+local var60_upvw = 0 -- MinRecoilPower
+local var61_upvw = 0 -- MinSpread / CurrentSpread
+local var66_upvw = 1 -- AimSpeedMultiplier
+local tbl_upvr_3 = {} -- AmmoTable
+local var64_upvw = nil -- ChamberedValue
+local var100_upvw = nil -- ChamberedConnection
+local var65_upvw = nil -- SensitivityValue
+local new_upvr_result1_upvw_2 = CFrame.new() -- RecoilCFrame
+local any_new_result1_3_upvr = SpringModule.new(Vector3.new()) -- SwaySpring
+local any_new_result1 = SpringModule.new(Vector3.new()) -- RotationSpring
+local any_new_result1_2_upvr = SpringModule.new(Vector3.new()) -- MovementSpring
+any_new_result1_3_upvr.s = 10
+any_new_result1_3_upvr.d = 1
+any_new_result1.s = 10
+any_new_result1.d = 0.15
+any_new_result1_2_upvr.s = 10
+any_new_result1_2_upvr.d = 1
+local any_GetLastInputType_result1_upvw = UserInputService:GetLastInputType()
+local var108_upvw = false -- supportsVibration
+local var109_upvw = false -- supportsLargeMotor
+local var110_upvw = nil -- lastVibrationInput
+local tbl_11_upvr = {} -- AnimationCoroutines
+local tbl_16_upvw = {} -- EventConnections
+local tbl_14_upvw = {Character, ServerFolder, CurrentCamera, ClientFolder} -- IgnoreList
+-- Crosshair Tweens
+local tbl_17_upvr = {
+	AimHide = TweenService:Create(StatusUI.Effects.Aim, TweenInfo.new(0.3), {ImageTransparency = 1}),
+	AimShow = TweenService:Create(StatusUI.Effects.Aim, TweenInfo.new(0.75), {ImageTransparency = 0}),
+	CrosshairHide = {},
+	CrosshairShow = {},
+}
+for _, part in ipairs({"Up", "Down", "Left", "Right"}) do
+	table.insert(tbl_17_upvr.CrosshairHide, TweenService:Create(
+		Crosshair:WaitForChild(part),
+		TweenInfo.new(0.2, Enum.EasingStyle.Linear),
+		{BackgroundTransparency = 1}
+		))
+	table.insert(tbl_17_upvr.CrosshairShow, TweenService:Create(
+		Crosshair:WaitForChild(part),
+		TweenInfo.new(0.2, Enum.EasingStyle.Linear),
+		{BackgroundTransparency = 0}
+		))
+end
+table.insert(tbl_17_upvr.CrosshairHide, TweenService:Create(
+	Crosshair:WaitForChild("Center"),
+	TweenInfo.new(0.2, Enum.EasingStyle.Linear),
+	{ImageTransparency = 1}
+	))
+table.insert(tbl_17_upvr.CrosshairShow, TweenService:Create(
+	Crosshair:WaitForChild("Center"),
+	TweenInfo.new(0.2, Enum.EasingStyle.Linear),
+	{ImageTransparency = 0}
+	))
+-- ========================================
+-- FUNÇÕES UTILITÁRIAS
+-- ========================================
+local function ResetWorkspace_upvr()
+	ServerFolder:ClearAllChildren()
+	ClientFolder:ClearAllChildren()
+	for _, child in ipairs(Terrain:GetChildren()) do
+		if child.Name ~= "Clouds" then
+			child:Destroy()
+		end
+	end
+end
+local function vibrateController_upvr(input, motor, intensity, duration)
+	if var108_upvw and input then
+		HapticService:SetMotor(input.UserInputType, motor, intensity)
+		task.wait(math.clamp(duration, 0, 0.2))
+		HapticService:SetMotor(input.UserInputType, motor, 0)
+	end
+end
+local function CreateShellSound()
+	task.delay(math.random(4, 8) / 10, function()
+		local sound = Instance.new("Sound")
+		sound.SoundId = "rbxassetid://325025387"
+		sound.Volume = 0.5
+		sound.PlaybackSpeed = math.random(30, 50) / 40
+		sound.SoundGroup = MainSoundGroup
+		sound.Parent = PlayerGui
+		sound:Play()
+		DebrisGobbler:AddItem(sound, sound.TimeLength + 0.5)
+	end)
+end
+local function TweenFOV(targetFOV, duration)
+	task.spawn(function()
+		local startTime = tick()
+		local startFOV = CurrentCamera.FieldOfView
+		local elapsed = 0
+		while elapsed < duration do
+			elapsed = tick() - startTime
+			local alpha = math.min(elapsed / duration, 1)
+			CurrentCamera.FieldOfView = startFOV + (targetFOV - startFOV) * alpha
+			task.wait()
+		end
+
+		CurrentCamera.FieldOfView = targetFOV
+	end)
+end
+local function Update_Gui_upvr(forceUpdate)
+	if not var47_upvw or not GunHUD or not var33_upvw then return end
+	if var47_upvw.Mode == "RPG" then
+		GunHUD.FireMode.Text = "Single-Shot"
+	else
+		GunHUD.FireMode.Text = var47_upvw.Mode
+	end
+
+	GunHUD.GunName.Text = var33_upvw.Name
+
+	if var64_upvw then
+		local ammo = tbl_upvr_3[var32_upvw] or 0
+		GunHUD.AmmoText.Text = ammo
+
+		local maxAmmo = var47_upvw.Ammo or 30
+		GunHUD.AmmoTextSecondary.Text = "/ " .. maxAmmo
+	end
+end
+-- ========================================
+-- SISTEMA DE MIRA
+-- ========================================
+local function aimGun_upvr(input)
+	if not var51_upvw or not var33_upvw or var31_upvw or var81_upvw then return end
+	if var80_upvw then
+		var80_upvw = false
+		var82_upvw = 0
+		ChangeSensitivity(1)
+
+		if var108_upvw then
+			coroutine.wrap(vibrateController_upvr)(input, Enum.VibrationMotor.Small, math.random(100, 200) / 1000, 0.1)
+		end
+
+		local glassLense = var33_upvw:FindFirstChild("GlassLense", true)
+		if glassLense then
+			SniperFocusModule:Stop()
+			local originalTransparency = glassLense:GetAttribute("OGTransparency") or 0
+			TweenService:Create(glassLense, TweenInfo.new(0.3), {Transparency = originalTransparency}):Play()
+		end
+
+		CameraViewModel.AimUp:Play()
+		TweenFOV(70, 120)
+
+		var32_upvw:SetAttribute("Aiming", nil)
+
+		if var47_upvw.FocusOnSight2 or var32_upvw:GetAttribute("FocusOnSight2") then
+			tbl_17_upvr.AimHide:Play()
+		end
+	else
+		var80_upvw = true
+		var82_upvw = 1
+
+		if var108_upvw then
+			coroutine.wrap(vibrateController_upvr)(input, Enum.VibrationMotor.Small, math.random(100, 200) / 1000, 0.1)
+		end
+
+		local glassLense = var33_upvw:FindFirstChild("GlassLense", true)
+		if glassLense then
+			TweenService:Create(glassLense, TweenInfo.new(0.3), {Transparency = 1}):Play()
+			SniperFocusModule:Start(var33_upvw, var47_upvw)
+		end
+
+		if var65_upvw then
+			ChangeSensitivity(var65_upvw.Value)
+		end
+
+		CameraViewModel.AimDown:Play()
+
+		local targetFOV = 70
+		if var32_upvw:GetAttribute("ChangeFOV") then
+			targetFOV = var32_upvw:GetAttribute("ChangeFOV").Y
+		elseif var47_upvw.ChangeFOV then
+			targetFOV = var47_upvw.ChangeFOV[2]
+		end
+
+		TweenFOV(targetFOV, 120)
+
+		var32_upvw:SetAttribute("Aiming", true)
+
+		if var47_upvw.FocusOnSight2 or var32_upvw:GetAttribute("FocusOnSight2") then
+			tbl_17_upvr.AimShow:Play()
+		else
+			tbl_17_upvr.AimHide:Play()
+		end
+	end
+end
+-- ========================================
+-- SISTEMA DE RECARGA
+-- ========================================
+function reloadGun(skipCheck)
+	if not var51_upvw or var82_upvw <= -2 then return end
+	if var77_upvw or var81_upvw then return end
+	if not var33_upvw or not var32_upvw or not var47_upvw then return end
+
+	local currentAmmo = tbl_upvr_3[var32_upvw] or 0
+	local maxAmmo = var47_upvw.Ammo or 30
+
+	if currentAmmo >= maxAmmo and not skipCheck then return end
+
+	var77_upvw = true
+
+	if var47_upvw.Mode == "RPG" and var33_upvw:FindFirstChild("Rocket") then
+		var33_upvw.Rocket.Transparency = 1
+	end
+
+	if var80_upvw then
+		aimGun_upvr(var110_upvw)
+	end
+
+	task.spawn(function()
+		ReloadAnim()
+	end)
+end
+function chamberGun()
+	if not var51_upvw or var81_upvw or var82_upvw <= -2 then return end
+	if table.find(EXPLOSIVE_WEAPONS, var33_upvw.Name) then return end
+	local currentAmmo = tbl_upvr_3[var32_upvw] or 0
+	if currentAmmo <= 0 then return end
+
+	var81_upvw = true
+	var75_upvw = false
+
+	task.spawn(function()
+		ChamberAnim()
+	end)
+end
+-- ========================================
+-- SISTEMA DE SPRINT
+-- ========================================
+
+local function Sprint_upvr()
+	if not var51_upvw then return end
+
+	if var31_upvw and var73_upvw > 0 and not var76_upvw then
+		if var80_upvw then
+			var82_upvw = 2
+			IdleAnim()
+			return
+		end
+
+		var82_upvw = 0
+		IdleAnim()
+	else
+		if var80_upvw then
+			var82_upvw = 2
+			IdleAnim()
+			return
+		end
+
+		var82_upvw = 0
+		IdleAnim()
+	end
+end
+-- ========================================
+-- SISTEMA DE DISPARO
+-- ========================================
+local function GetDir_upvr(spreadMultiplier)
+	if not var33_upvw or not var33_upvw:FindFirstChild("SmokePart") then
+		return CurrentCamera.CFrame.LookVector
+	end
+	local smokeCFrame = var33_upvw.SmokePart.CFrame
+	local ignoreList = {Character, var33_upvw, CurrentCamera}
+	local targetPosition = nil
+
+	local attempts = 0
+	repeat
+		attempts = attempts + 1
+		local rayParams = RaycastParams.new()
+		rayParams.FilterType = Enum.RaycastFilterType.Exclude
+		rayParams.FilterDescendantsInstances = ignoreList
+
+		local rayResult = Workspace:Raycast(
+			CurrentCamera.CFrame.Position,
+			CurrentCamera.CFrame.LookVector * 500000,
+			rayParams
+		)
+
+		if rayResult and FireModuleClient.CanRayPierce(nil, rayResult) then
+			table.insert(ignoreList, rayResult.Instance)
+		else
+			if rayResult then
+				targetPosition = rayResult.Position
+			end
+			break
+		end
+	until attempts > 10
+
+	local direction
+	if targetPosition then
+		local distance = (targetPosition - smokeCFrame.Position).Magnitude
+		if distance > 10 then
+			direction = (CFrame.lookAt(targetPosition, targetPosition + CurrentCamera.CFrame.LookVector).Position - smokeCFrame.Position).Unit
+		else
+			direction = ((CFrame.lookAt(targetPosition, targetPosition + CurrentCamera.CFrame.LookVector) * CFrame.new(0, 0, -5)).Position - smokeCFrame.Position).Unit
+		end
+	else
+		direction = CurrentCamera.CFrame.LookVector
+	end
+
+	local spread = spreadMultiplier * (var61_upvw or 0)
+	local walkMultiplier = var73_upvw / Stances.Mobility.Value * (var47_upvw.WalkMultiplier or 1)
+
+	local randomSpread = CFrame.Angles(
+		math.rad(math.random((-spread - walkMultiplier) * 1, (spread + walkMultiplier) * 1) / 20),
+		math.rad(math.random((-spread - walkMultiplier) * 1, (spread + walkMultiplier) * 1) / 20),
+		math.rad(math.random((-spread - walkMultiplier) * 1, (spread + walkMultiplier) * 1) / 20)
+	)
+
+	return (randomSpread * direction)
+end
+local function SlideEx_upvr()
+	if not var51_upvw or not var33_upvw then return end
+	local success, error = pcall(function()
+		local slide = var33_upvw:FindFirstChild("Slide")
+		if slide and slide:IsA("Motor6D") then
+			local slideExtend = var47_upvw.SlideExtend or CFrame.new()
+			local duration = var62_upvw > 0 and (var62_upvw / 2) or 0.1
+
+			TweenService:Create(slide, TweenInfo.new(duration), {C0 = slideExtend}):Play()
+
+			task.delay(duration, function()
+				if slide and slide.Parent then
+					TweenService:Create(slide, TweenInfo.new(0.2), {C0 = CFrame.new()}):Play()
+				end
+			end)
+		end
+
+		if var47_upvw.MoveBolt then
+			local handle = var33_upvw:FindFirstChild("Handle")
+			if handle then
+				local bolt = handle:FindFirstChild("Bolt")
+				if bolt and bolt:IsA("Motor6D") then
+					local boltExtend = var47_upvw.BoltExtend or CFrame.new()
+					local duration = var62_upvw > 0 and (var62_upvw / 2) or 0.1
+
+					TweenService:Create(bolt, TweenInfo.new(duration), {C0 = boltExtend}):Play()
+
+					task.delay(duration, function()
+						if bolt and bolt.Parent then
+							TweenService:Create(bolt, TweenInfo.new(0.2), {C0 = CFrame.new()}):Play()
+						end
+					end)
+				end
+			end
+		end
+
+		local handle = var33_upvw:FindFirstChild("Handle")
+		if handle then
+			local barrelMove = handle:FindFirstChild("Barrell Move") or handle:FindFirstChild("Barrel Move")
+			if barrelMove and barrelMove:IsA("Motor6D") then
+				TweenService:Create(barrelMove, TweenInfo.new(0.25), {C0 = CFrame.new(0, 0, 0.8)}):Play()
+
+				task.delay(0.125, function()
+					if barrelMove and barrelMove.Parent then
+						TweenService:Create(barrelMove, TweenInfo.new(0.25), {C0 = CFrame.new()}):Play()
+					end
+				end)
+			end
+		end
+	end)
+
+	if not success then
+		warn("[SlideEx_upvr] Error:", error)
+	end
+end
+local function recoil_upvr()
+	if not var32_upvw or var32_upvw.Parent ~= Character then return end
+	task.spawn(function()
+		CurrentCamera.CFrame = CurrentCamera.CFrame * CFrame.Angles(
+			var55_upvw, 
+			var56_upvw * math.random(-1, 1), 
+			0
+		)
+
+		if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then
+			var55_upvw = var55_upvw * 0.6
+			var56_upvw = var56_upvw * 0.6
+		elseif UserInputService.GamepadEnabled then
+			var55_upvw = var55_upvw * 0.8
+			var56_upvw = var56_upvw * 0.8
+		end
+
+		local punchPower = var60_upvw or 1
+		new_upvr_result1_upvw_2 = new_upvr_result1_upvw_2 * CFrame.new(
+			math.random(-var58_upvw, var58_upvw) / 100 * punchPower,
+			math.random(-var57_upvw, var57_upvw) / 100 * punchPower,
+			math.random(-var59_upvw, var59_upvw) / 100 * punchPower
+		)
+	end)
+
+	local smokePart = var33_upvw:FindFirstChild("SmokePart")
+	if smokePart then
+		local flashFX = smokePart:FindFirstChild("FlashFX[Flash]")
+		local smoke = smokePart:FindFirstChild("Smoke")
+		local lightFX = smokePart:FindFirstChild("FlashFX")
+
+		local vfxColors = {}
+		local weaponName = var33_upvw.Name
+		local attachments = LocalPlayer:FindFirstChild("Attachments")
+		if attachments then
+			local weaponAttachment = attachments:FindFirstChild(weaponName)
+			if weaponAttachment then
+				local vfxUsing = weaponAttachment:GetAttribute("VFXUsing")
+				if vfxUsing then
+					local camoAttribute = weaponAttachment:GetAttribute("Camo" .. vfxUsing)
+					if camoAttribute and CamoTextures[camoAttribute] then
+						vfxColors = CamoTextures[camoAttribute].CustomVFX or {}
+					end
+				end
+			end
+		end
+
+		if flashFX then
+			flashFX.Color = vfxColors.FlashColor or ColorSequence.new(Color3.new(1, 1, 0.498039), Color3.new(1, 0.333333, 0))
+			flashFX.Rate = var33_upvw:FindFirstChild("Flash Hider") and 150 or 1000
+			flashFX.Enabled = true
+		end
+
+		if smoke then
+			smoke.Color = vfxColors.SmokeColor or ColorSequence.new(Color3.new(1, 1, 1))
+			smoke.Enabled = true
+		end
+
+		if lightFX then
+			lightFX.Color = vfxColors.LightFlashColor or Color3.new(1, 0.843137, 0.145098)
+			if not var33_upvw:FindFirstChild("Flash Hider") then
+				lightFX.Enabled = true
+			end
+		end
+
+		task.delay(1/30, function()
+			if flashFX then flashFX.Enabled = false end
+			if smoke then smoke.Enabled = false end
+			if lightFX then lightFX.Enabled = false end
+
+			local chamber = var33_upvw:FindFirstChild("Chamber")
+			if chamber then
+				for _, emitter in ipairs(chamber:GetChildren()) do
+					if emitter:IsA("ParticleEmitter") then
+						emitter.Enabled = false
+					end
+				end
+			end
+		end)
+
+		if var33_upvw:FindFirstChild("Chamber") and bulletShells.Value then
+			for _, emitter in ipairs(var33_upvw.Chamber:GetChildren()) do
+				if emitter.Name == "Shell" then
+					emitter:Emit(1)
+				elseif emitter:IsA("ParticleEmitter") then
+					emitter.Enabled = true
+				end
+			end
+		end
+	end
+
+	local serverWeapon = Character:WaitForChild("S" .. var33_upvw.Name, 5)
+	if serverWeapon then
+		local soundIndex = math.random(1, 4)
+		local soundName = "Sound" .. soundIndex
+
+		if serverWeapon:FindFirstChild("Suppressor") then
+			CreateSound(var33_upvw, CameraViewModel[soundName], "Suppressed")
+		else
+			CreateSound(var33_upvw, CameraViewModel[soundName], "Normal")
+		end
+	end
+
+	SlideEx_upvr()
+end
+function CastRay(directions)
+	if not directions then return end
+	local weaponTool = Character:FindFirstChildOfClass("Tool")
+	if not weaponTool then return end
+
+	local viewModel = CurrentCamera:FindFirstChild(weaponTool.Name)
+	if not viewModel then return end
+
+	local weaponModel = viewModel:FindFirstChild(weaponTool.Name)
+	if not weaponModel or not weaponModel:FindFirstChild("SmokePart") then return end
+
+	local firePosition = weaponModel.SmokePart.CFrame * CFrame.new(
+		0, 0, 
+		weaponModel.SmokePart.CFrame:ToObjectSpace(HumanoidRootPart.CFrame).Z
+	)
+
+	FireModuleClient.FireGun(LocalPlayer, directions, weaponTool, var33_upvw, firePosition.Position)
+	FireGunEvent:FireServer(directions, weaponTool, Character:FindFirstChild("S" .. weaponTool.Name), firePosition.Position, var79_upvw)
+
+	CreateShellSound()
+end
+local function fireGun_upvr(input)
+	if not var51_upvw or not var75_upvw or not var32_upvw or not var47_upvw then return end
+	if var47_upvw.Cooldown and var32_upvw:GetAttribute("Cooldown") then return end
+	local currentAmmo = tbl_upvr_3[var32_upvw] or 0
+	if currentAmmo <= 0 then
+		if not table.find(EXPLOSIVE_WEAPONS, var33_upvw.Name) then
+			var64_upvw.Value = false
+		end
+		CameraViewModel.Click:Play()
+		reloadGun(true)
+		return
+	end
+
+	if var76_upvw or not var64_upvw.Value then
+		CameraViewModel.Click:Play()
+		return
+	end
+
+	if not var75_upvw or var81_upvw or var31_upvw then return end
+
+	var75_upvw = false
+	local mode = var47_upvw.Mode
+
+	if var108_upvw then
+		local intensity = math.random(300, 450) / 1000
+		coroutine.wrap(vibrateController_upvr)(input, Enum.VibrationMotor.Small, intensity, var62_upvw)
+	end
+
+	if mode == "Semi" then
+		local directions = {}
+		for i = 1, var47_upvw.Bullets or 1 do
+			local spreadMult = var80_upvw and 1 or (var47_upvw.HipfireSpreadMuitpler or 1.5)
+			if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then
+				spreadMult = spreadMult * 0.25
+			end
+			table.insert(directions, GetDir_upvr(spreadMult))
+		end
+
+		CastRay(directions)
+		recoil_upvr()
+		tbl_upvr_3[var32_upvw] = math.max(0, tbl_upvr_3[var32_upvw] - 1)
+		Update_Gui_upvr(true)
+		Events.ServerGunAnim:FireServer(var62_upvw, var48_upvw, var32_upvw)
+
+		if var61_upvw then
+			local maxSpread = var32_upvw:GetAttribute("MaxSpread") or var47_upvw.MaxSpread
+			var61_upvw = math.min(maxSpread, var61_upvw + var47_upvw.AimInaccuracyStepAmount)
+			var60_upvw = math.min(var47_upvw.MaxRecoilPower, var60_upvw + var47_upvw.RecoilPowerStepAmount)
+		end
+
+		task.wait(var62_upvw)
+		var75_upvw = true
+
+	elseif mode == "Auto" then
+		while var75_upvw and var51_upvw and tbl_upvr_3[var32_upvw] > 0 do
+			local directions = {}
+			for i = 1, var47_upvw.Bullets or 1 do
+				table.insert(directions, GetDir_upvr(var61_upvw))
+			end
+
+			CastRay(directions)
+			recoil_upvr()
+			tbl_upvr_3[var32_upvw] = math.max(0, tbl_upvr_3[var32_upvw] - 1)
+			Update_Gui_upvr(true)
+			Events.ServerGunAnim:FireServer(var62_upvw, var48_upvw, var32_upvw)
+
+			if var61_upvw then
+				local maxSpread = var32_upvw:GetAttribute("MaxSpread") or var47_upvw.MaxSpread
+				var61_upvw = math.min(maxSpread, var61_upvw + var47_upvw.AimInaccuracyStepAmount)
+				var60_upvw = math.min(var47_upvw.MaxRecoilPower, var60_upvw + var47_upvw.RecoilPowerStepAmount)
+			end
+
+			task.wait(var62_upvw)
+		end
+		var75_upvw = true
+
+	elseif mode == "Burst" then
+		local burstCount = var47_upvw.BurstCount or 3
+		for i = 1, burstCount do
+			if var75_upvw and tbl_upvr_3[var32_upvw] > 0 then
+				local directions = {}
+				for j = 1, var47_upvw.Bullets or 1 do
+					table.insert(directions, GetDir_upvr(var61_upvw))
+				end
+
+				CastRay(directions)
+				recoil_upvr()
+				tbl_upvr_3[var32_upvw] = math.max(0, tbl_upvr_3[var32_upvw] - 1)
+				Update_Gui_upvr(true)
+				task.wait(var63_upvw)
+			end
+		end
+
+		if var61_upvw then
+			local maxSpread = var32_upvw:GetAttribute("MaxSpread") or var47_upvw.MaxSpread
+			var61_upvw = math.min(maxSpread, var61_upvw + var47_upvw.AimInaccuracyStepAmount)
+			var60_upvw = math.min(var47_upvw.MaxRecoilPower, var60_upvw + var47_upvw.RecoilPowerStepAmount)
+		end
+
+		task.wait(var63_upvw)
+		var75_upvw = true
+
+	elseif mode == "Bolt-Action" or mode == "Pump-Action" then
+		local directions = {}
+		local spreadMult = var80_upvw and 1 or (var47_upvw.HipfireSpreadMuitpler or 1.5)
+		if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then
+			spreadMult = spreadMult * 0.25
+		end
+
+		for i = 1, var47_upvw.Bullets or 1 do
+			table.insert(directions, GetDir_upvr(spreadMult))
+		end
+
+		CastRay(directions)
+		recoil_upvr()
+		tbl_upvr_3[var32_upvw] = math.max(0, tbl_upvr_3[var32_upvw] - 1)
+		Update_Gui_upvr(true)
+		Events.ServerGunAnim:FireServer(var62_upvw, var48_upvw, var32_upvw)
+
+		if var61_upvw then
+			local maxSpread = var32_upvw:GetAttribute("MaxSpread") or var47_upvw.MaxSpread
+			var61_upvw = math.min(maxSpread, var61_upvw + var47_upvw.AimInaccuracyStepAmount)
+			var60_upvw = math.min(var47_upvw.MaxRecoilPower, var60_upvw + var47_upvw.RecoilPowerStepAmount)
+		end
+
+		if var80_upvw then
+			var75_upvw = false
+			var76_upvw = false
+			var81_upvw = true
+			ChamberAnim(true)
+			Sprint_upvr()
+			var75_upvw = true
+			var81_upvw = false
+		else
+			var75_upvw = false
+			var76_upvw = false
+			var81_upvw = true
+			ChamberAnim(true)
+			Sprint_upvr()
+			var75_upvw = true
+			var81_upvw = false
+		end
+
+		task.wait(var62_upvw)
+	end
+end
+
+
+Stances:WaitForChild("Correndo").Changed:Connect(function(value)
+	var31_upvw = value
+	Sprint_upvr()
+end)
+
+-- ========================================
+-- SISTEMA DE ANIMAÇÕES
+-- ========================================
+
+local function PlayAnimation(animationName, ...)
+	if not var48_upvw or not var48_upvw[animationName] then return end
+
+	local args = {...}
+
+	local animCoroutine = coroutine.create(function()
+		var48_upvw[animationName](Character, table.unpack(args))
+	end)
+
+	coroutine.resume(animCoroutine)
+	table.insert(tbl_11_upvr, animCoroutine)
+
+	return animCoroutine
+end
+
+function IdleAnim()
+	if not var51_upvw then return end
+	if not var87_upvw or not var87_upvw:FindFirstChild("AnimBaseW") then return end
+
+	PlayAnimation("IdleAnim", {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, nil, nil})
+end
+
+function SprintAnim()
+	if var76_upvw then return end
+	if not var87_upvw or not var87_upvw:FindFirstChild("AnimBaseW") then return end
+
+	PlayAnimation("SprintAnim", {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, nil, nil})
+end
+
+function EquipAnim()
+	if not var51_upvw then return end
+	if not var87_upvw or not var87_upvw:FindFirstChild("AnimBaseW") then return end
+
+	var76_upvw = true
+	var75_upvw = false
+	var81_upvw = true
+
+	local animCoroutine = PlayAnimation("EquipAnim", {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, nil, nil})
+
+	repeat
+		task.wait()
+	until not var76_upvw or coroutine.status(animCoroutine) == "dead"
+
+	var81_upvw = false
+	var75_upvw = true
+	var76_upvw = false
+end
+
+function ReloadAnim()
+	if not var51_upvw then return end
+	if not var87_upvw or not var87_upvw:FindFirstChild("AnimBaseW") then return end
+
+	var76_upvw = true
+
+	if var47_upvw.Cooldown then
+		GunHUD.AmmoText.Text = "Cooldown"
+
+		local cooldownTime = var32_upvw:GetAttribute("Cooldown") or var47_upvw.Cooldown
+		local lastTick = var32_upvw:GetAttribute("LastCooldownTick") or tick()
+		local remaining = math.round(cooldownTime - (tick() - lastTick))
+
+		if remaining > 0 then
+			for i = remaining, 0, -1 do
+				var32_upvw:SetAttribute("Cooldown", i)
+				var32_upvw:SetAttribute("LastCooldownTick", tick())
+				GunHUD.AmmoTextSecondary.Text = "- " .. i
+				task.wait(1)
+			end
+		end
+
+		var32_upvw:SetAttribute("Cooldown", nil)
+		var32_upvw:SetAttribute("LastCooldownTick", nil)
+		Update_Gui_upvr(true)
+	else
+		PlayAnimation("ReloadAnim", {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, nil, tbl_upvr_3[var32_upvw], var47_upvw, var64_upvw, nil, nil})
+
+		task.wait(var47_upvw.ReloadTime or 2)
+
+		if var47_upvw.ReloadType == 1 then
+			if tbl_upvr_3[var32_upvw] > 0 and var47_upvw.IncludeChamberedBullet then
+				tbl_upvr_3[var32_upvw] = var47_upvw.Ammo + 1
+			else
+				tbl_upvr_3[var32_upvw] = var47_upvw.Ammo
+			end
+			var64_upvw.Value = true
+		elseif var47_upvw.ReloadType == 2 then
+			if tbl_upvr_3[var32_upvw] < var47_upvw.Ammo then
+				tbl_upvr_3[var32_upvw] = tbl_upvr_3[var32_upvw] + 1
+			end
+			var64_upvw.Value = true
+		end
+
+		Update_Gui_upvr(true)
+	end
+
+	var76_upvw = false
+	var77_upvw = false
+end
+
+function ChamberAnim(skipAmmoDecrease)
+	if not var51_upvw then return end
+	if not var87_upvw or not var87_upvw:FindFirstChild("AnimBaseW") then return end
+
+	var76_upvw = true
+
+	local wasChambered = var64_upvw.Value
+	var64_upvw.Value = false
+
+	PlayAnimation("ChamberAnim", {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, var47_upvw, nil, nil})
+
+	task.wait(var47_upvw.ChamberTime or 0.5)
+
+	if tbl_upvr_3[var32_upvw] > 0 and wasChambered and not skipAmmoDecrease then
+		tbl_upvr_3[var32_upvw] = math.max(0, tbl_upvr_3[var32_upvw] - 1)
+	end
+
+	if tbl_upvr_3[var32_upvw] >= 1 then
+		var64_upvw.Value = true
+	elseif not table.find(EXPLOSIVE_WEAPONS, var33_upvw.Name) then
+		var64_upvw.Value = false
+	end
+
+	Update_Gui_upvr(true)
+	var76_upvw = false
+	var81_upvw = false
+end
+local var74_upvw
+
+function ChamberBKAnim()
+	local coroutine_create_result1_3 = coroutine.create(function()
+		var76_upvw = true
+		var64_upvw.Value = false
+		var48_upvw.ChamberBKAnim(Character, nil, {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, var47_upvw, nil, nil})
+		var74_upvw = false
+		if tbl_upvr_3[var32_upvw] > 0 then
+			var64_upvw.Value = true
+		end
+		var76_upvw = false
+		Update_Gui_upvr(true)
+	end)
+	coroutine.resume(coroutine_create_result1_3)
+	table.insert(tbl_11_upvr, coroutine_create_result1_3)
+	repeat
+		task.wait()
+	until var76_upvw == false and not coroutine_create_result1_3
+end
+
+function ShellInsertAnim()
+	local coroutine_create_result1_7 = coroutine.create(function()
+		var76_upvw = true
+		var48_upvw.ShellInsertAnim(Character, nil, {var88_upvw, nil, nil, var87_upvw.AnimBaseW, var33_upvw, var47_upvw, var64_upvw, nil, nil})
+		var76_upvw = false
+	end)
+	coroutine.resume(coroutine_create_result1_7)
+	table.insert(tbl_11_upvr, coroutine_create_result1_7)
+	repeat
+		task.wait()
+	until var76_upvw == false and not coroutine_create_result1_7
+end
+
+-- ========================================
+-- SISTEMA DE EQUIPAR/DESEQUIPAR
+-- ========================================
+
+local function Setup_upvr(tool)
+	print("[Setup_upvr] Iniciando setup para:", tool and tool.Name or "NIL")
+
+	for _, co in ipairs(tbl_11_upvr) do
+		if type(co) == "thread" then
+			pcall(function() coroutine.close(co) end)
+		end
+	end
+	table.clear(tbl_11_upvr)
+
+	if CurrentCamera then
+		for _, child in ipairs(CurrentCamera:GetChildren()) do
+			if child:IsA("Model") and child.Name ~= "CameraViewModel" then
+				child:Destroy()
+			end
+			if child:IsA("BasePart") and (child.Name == "Left Arm" or child.Name == "Right Arm") then
+				child:Destroy()
+			end
+		end
+	end
+
+	if var89_upvw then
+		pcall(function() var89_upvw:Destroy() end)
+		var89_upvw = nil
+		var87_upvw = nil
+	end
+
+	var76_upvw = false
+	var51_upvw = false
+	_G.GunEquipped = false
+
+	var32_upvw = tool
+	var33_upvw = GunModels:WaitForChild(tool.Name):Clone()
+	var187_upvw = ACS_Guns[tool.Name]
+	var47_upvw = require(var187_upvw:WaitForChild("Settings"))
+	var48_upvw = require(var187_upvw:WaitForChild("Animations"))
+	var66_upvw = var47_upvw.AimSpeedMultiplier or 1
+
+	if tool:GetAttribute("FireRate") then
+		var62_upvw = 1 / (tool:GetAttribute("FireRate") / 60)
+	else
+		var62_upvw = 1 / (var47_upvw.FireRate / 60)
+	end
+
+	var63_upvw = 1 / (var47_upvw.BurstFireRate / 60)
+
+	if tool:GetAttribute("VRecoil") then
+		var55_upvw = math.random(tool:GetAttribute("VRecoil").X, tool:GetAttribute("VRecoil").Y) / 1000
+	else
+		var55_upvw = math.random(var47_upvw.VRecoil[1], var47_upvw.VRecoil[2]) / 1000
+	end
+
+	if tool:GetAttribute("HRecoil") then
+		var56_upvw = math.random(tool:GetAttribute("HRecoil").X, tool:GetAttribute("HRecoil").Y) / 1000
+	else
+		var56_upvw = math.random(var47_upvw.HRecoil[1], var47_upvw.HRecoil[2]) / 1000
+	end
+
+	var57_upvw = var47_upvw.VPunchBase
+	var58_upvw = var47_upvw.HPunchBase
+	var59_upvw = var47_upvw.DPunchBase
+	var60_upvw = var47_upvw.MinRecoilPower
+
+	local minSpread = tool:GetAttribute("MinSpread") or var47_upvw.MinSpread
+	var61_upvw = minSpread
+
+	if not tbl_upvr_3[tool] then
+		tbl_upvr_3[tool] = var187_upvw.Ammo.Value
+	end
+
+	var64_upvw = var187_upvw.Chambered
+	var100_upvw = var64_upvw.Changed:Connect(Update_Gui_upvr)
+	var65_upvw = var187_upvw.Sens
+
+	Events.Equip:FireServer(var32_upvw, var47_upvw)
+
+	var89_upvw = Instance.new("Model")
+	var89_upvw.Name = tool.Name
+	var89_upvw.Parent = CurrentCamera
+
+	var87_upvw = Instance.new("Part")
+	var87_upvw.CastShadow = false
+	var87_upvw.FormFactor = Enum.FormFactor.Custom
+	var87_upvw.CanCollide = false
+	var87_upvw.Transparency = 1
+	var87_upvw.Anchored = false
+	var87_upvw.Name = "AnimBase"
+	var87_upvw.Massless = true
+	var87_upvw.Size = Vector3.new(0.1, 0.1, 0.1)
+	var87_upvw.Parent = var89_upvw
+
+	var88_upvw = Instance.new("Motor6D")
+	var88_upvw.Part0 = var87_upvw
+	var88_upvw.Part1 = CameraViewModel
+	var88_upvw.Name = "AnimBaseW"
+	var88_upvw.Parent = var87_upvw
+
+	var90_upvw = Instance.new("Motor6D")
+	var90_upvw.Name = "Clone"
+	var90_upvw.Part0 = var87_upvw
+	var90_upvw.Part1 = CameraViewModel
+	var90_upvw.Parent = var87_upvw
+
+	var33_upvw.Parent = var89_upvw
+
+	local attachmentsModule = require(ReplicatedStorage:WaitForChild("Attachments System"):WaitForChild("Welds"))
+	attachmentsModule.AddAttachments(LocalPlayer, var33_upvw)
+
+	for _, part in ipairs(var33_upvw:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "Handle" then
+			if part.Name ~= "Bolt" and part.Name ~= "Lid" and part.Name ~= "Bolt2" and part.Name ~= "Barrell Move" then
+				UtilitiesModule.Weld(part, var33_upvw:WaitForChild("Handle"))
+			end
+			if part.Name == "Bolt" or part.Name == "Slide" or part.Name == "Barrell Move" then
+				UtilitiesModule.WeldComplex(var33_upvw:WaitForChild("Handle"), part, part.Name)
+			end
+			if part.Name == "Lid" then
+				if var33_upvw:FindFirstChild("LidHinge") then
+					UtilitiesModule.Weld(part, var33_upvw:WaitForChild("LidHinge"))
+				else
+					UtilitiesModule.Weld(part, var33_upvw:WaitForChild("Handle"))
+				end
+			end
+			if part.Name == "Bolt2" then
+				if var33_upvw:FindFirstChild("Bolt") then
+					UtilitiesModule.Weld(part, var33_upvw:WaitForChild("Bolt"))
+				else
+					UtilitiesModule.Weld(part, var33_upvw:WaitForChild("Handle"))
+				end
+			end
+		end
+	end
+
+	for _, part in ipairs(var33_upvw:GetDescendants()) do
+		if part:IsA("BasePart") and part.Name ~= "Grip" then
+			part.Anchored = false
+			part.CanCollide = false
+		end
+	end
+
+	attachmentsModule.MoveAim(LocalPlayer, var33_upvw)
+	attachmentsModule.MoveSmokePart(LocalPlayer, var33_upvw)
+
+	local var83_upvw, var84_upvw, var85_upvw, var86_upvw, var87_upvw_new, var88_upvw_new = SetupModule(var89_upvw, UtilitiesModule, Character, nil, nil, nil, nil, var87_upvw, var88_upvw, var47_upvw, var33_upvw)
+
+	if var87_upvw_new then var87_upvw = var87_upvw_new end
+	if var88_upvw_new then var88_upvw = var88_upvw_new end
+
+	var51_upvw = true
+	_G.GunEquipped = true
+
+	print("[Setup_upvr] Setup concluído!")
+end
+
+local function Unset_upvr()
+	print("[Unset_upvr] Iniciando unequip...")
+
+	var76_upvw = false
+	var51_upvw = false
+	_G.GunEquipped = false
+
+	if tbl_11_upvr then
+		for _, co in ipairs(tbl_11_upvr) do
+			if type(co) == "thread" then
+				pcall(function() coroutine.close(co) end)
+			end
+		end
+		table.clear(tbl_11_upvr)
+	end
+
+	if var87_upvw and var87_upvw:FindFirstChild("GripW") then
+		pcall(function() var87_upvw:FindFirstChild("GripW"):Destroy() end)
+	end
+
+	if var89_upvw then
+		pcall(function() var89_upvw:Destroy() end)
+		var89_upvw = nil
+		var87_upvw = nil
+	end
+
+	if var33_upvw then
+		pcall(function() var33_upvw:Destroy() end)
+		var33_upvw = nil
+	end
+
+	if var88_upvw then
+		pcall(function() var88_upvw:Destroy() end)
+		var88_upvw = nil
+	end
+
+	if var90_upvw then
+		pcall(function() var90_upvw:Destroy() end)
+		var90_upvw = nil
+	end
+
+	var32_upvw = nil
+
+	print("[Unset_upvr] Unequip concluído.")
+end
+
+-- ========================================
+-- SISTEMA DE ROTAÇÃO DA CABEÇA
+-- ========================================
+
+local var557_upvw = 0
+local Neck_4_upvr = Character:WaitForChild("Torso"):WaitForChild("Neck")
+local var559_upvw
+
+local function HeadMovement_upvr()
+	local now = os.clock()
+	if now - var557_upvw < 1/15 then return end
+	var557_upvw = now
+
+	if Humanoid.Health <= 0 then return end
+
+	local neck = Character.Torso:FindFirstChild("Neck")
+	if not neck then return end
+
+	if Humanoid.Sit or HumanoidRootPart.Anchored or Character:GetAttribute("NoMovement") then
+		var559_upvw = CFrame.new(0, -0.5, 0) * CFrame.Angles(math.pi/2, math.pi, 0)
+	else
+		local cameraCF = CurrentCamera.CFrame
+		local rootCF = HumanoidRootPart.CFrame
+		local torsoCF = Character.Torso.CFrame
+
+		local relativePos = rootCF:ToObjectSpace(cameraCF).LookVector
+		local xAngle = math.asin(relativePos.X) / 1.15
+		local yAngle = -math.asin(cameraCF.LookVector.Y) + math.asin(torsoCF.LookVector.Y)
+
+		var559_upvw = CFrame.new(0, -0.5, 0) 
+			* CFrame.Angles(0, xAngle, 0) 
+			* CFrame.Angles(yAngle, 0, 0) 
+			* CFrame.Angles(-math.pi/2, 0, math.pi)
+	end
+
+	if not var51_upvw then
+		for i = 0, 1, 0.07 do
+			if neck then
+				neck.C1 = neck.C1:Lerp(var559_upvw, i)
+				task.wait()
+			end
+		end
+	end
+
+	Events.HeadRot:FireServer(var559_upvw)
+end
+
+-- ========================================
+-- EVENTOS DE REDE
+-- ========================================
+
+Events.Hit.OnClientEvent:Connect(function(player, position, damage, isPlayer, targetPlayer)
+	if player ~= LocalPlayer then
+		HitmarkerModule.HitEffect(position, damage, isPlayer, targetPlayer, LocalPlayer)
+	end
+end)
+
+Events.HeadRot.OnClientEvent:Connect(function(player, neckCFrame)
+	if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then return end
+	if not player or player == LocalPlayer then return end
+	if not player.Character or not player.Character:FindFirstChild("Head") then return end
+	if not player.Character:FindFirstChild("HumanoidRootPart") then return end
+	if player.Character.HumanoidRootPart.Anchored then return end
+
+	local neck = player.Character.Torso:FindFirstChild("Neck")
+	if not neck then return end
+
+	for i = 0, 1, 0.07 do
+		if neck then
+			neck.C1 = neck.C1:Lerp(neckCFrame, i)
+			task.wait()
+		end
+	end
+end)
+
+Events.SubToHeadrot:FireServer()
+
+Events.ServerGunAnim.OnClientEvent:Connect(function(player, fireRate, animations, weapon)
+	if player == LocalPlayer then return end
+	if not player.Character:FindFirstChild("S" .. weapon.Name) then return end
+	if not player.Character["S" .. weapon.Name]:FindFirstChild("Handle") then return end
+
+	pcall(function()
+		if weapon.Parent and weapon.Parent:FindFirstChild("S" .. weapon.Name) then
+			local serverWeapon = weapon.Parent:FindFirstChild("S" .. weapon.Name)
+			if not serverWeapon then return end
+
+			local distance = (Character.Torso.Position - player.Character.Torso.Position).Magnitude
+
+			if serverWeapon:FindFirstChild("Suppressor") then
+				if distance < soundDistances.Suppressed.EchoMax + 40 or CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+					CreateSound(weapon, weapon.Parent.Torso, "Suppressed", "Server")
+				end
+			else
+				if distance < soundDistances.Normal.EchoMax + 50 or CurrentCamera.CameraType == Enum.CameraType.Scriptable then
+					CreateSound(weapon, weapon.Parent.Torso, "Normal", "Server")
+				end
+			end
+		end
+	end)
+
+	if player.Character:FindFirstChild("S" .. weapon.Name) then
+		local serverWeapon = player.Character["S" .. weapon.Name]
+		local smokePart = serverWeapon:FindFirstChild("SmokePart")
+
+		if smokePart then
+			local flashFX = smokePart:FindFirstChild("FlashFX[Flash]")
+			local smoke = smokePart:FindFirstChild("Smoke")
+
+			if flashFX and smoke then
+				local vfxColors = {}
+				local attachments = player:FindFirstChild("Attachments")
+				if attachments then
+					local weaponAttachment = attachments:FindFirstChild(weapon.Name)
+					if weaponAttachment then
+						local vfxUsing = weaponAttachment:GetAttribute("VFXUsing")
+						if vfxUsing then
+							local camoAttribute = weaponAttachment:GetAttribute("Camo" .. vfxUsing)
+							if camoAttribute and CamoTextures[camoAttribute] then
+								vfxColors = CamoTextures[camoAttribute].CustomVFX or {}
+							end
+						end
+					end
+				end
+
+				flashFX.Color = vfxColors.FlashColor or ColorSequence.new(Color3.new(1, 1, 0.498039), Color3.new(1, 0.333333, 0))
+				smoke.Color = vfxColors.SmokeColor or ColorSequence.new(Color3.new(1, 1, 1))
+
+				flashFX.Rate = serverWeapon:FindFirstChild("Flash Hider") and 150 or 1000
+				flashFX.Enabled = true
+				smoke.Enabled = true
+
+				task.delay(1/30, function()
+					if flashFX then flashFX.Enabled = false end
+					if smoke then smoke.Enabled = false end
+				end)
+			end
+		end
+	end
+end)
+
+BulletFiredEvent.OnClientEvent:Connect(function(player, directions,weapon, serverWeapon, position)
+	if player ~= LocalPlayer then
+		FireModuleClient.FireGun(player, directions, weapon, serverWeapon, position)
+	end
+end)
+
+BulletHitEvent.OnClientEvent:Connect(function(isPlayer, position, damage)
+	if not var51_upvw or not Crosshair.Parent.Enabled or not Crosshair.Visible then return end
+
+	if isPlayer then
+		local sound = Instance.new("Sound")
+		sound.SoundId = math.random(1, 2) == 1 and "rbxassetid://8397760862" or "rbxassetid://8397760683"
+		sound.Parent = PlayerGui
+		sound.Volume = 2
+		sound.PlayOnRemove = true
+		sound:Destroy()
+
+		task.spawn(function()
+			for _, marker in ipairs(Crosshair.HitMarker:GetChildren()) do
+				TweenService:Create(marker, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
+			end
+
+			if position and damage then
+				DamageDisplayModule.DisplayDamage(damage, position, true)
+			end
+
+			task.wait(0.3)
+
+			for _, marker in ipairs(Crosshair.HitMarker:GetChildren()) do
+				TweenService:Create(marker, TweenInfo.new(0.3), {BackgroundTransparency = 1}):Play()
+			end
+		end)
+	elseif objectHitmarker.Value then
+		local sound = Instance.new("Sound")
+		sound.SoundId = math.random(1, 2) == 1 and "rbxassetid://11387332687" or "rbxassetid://11387332597"
+		sound.Parent = PlayerGui
+		sound.Volume = 0.2
+		sound.PlaybackSpeed = 2
+		sound.PlayOnRemove = true
+		sound:Destroy()
+
+		task.spawn(function()
+			for _, marker in ipairs(Crosshair.ObjectHitMarker:GetChildren()) do
+				TweenService:Create(marker, TweenInfo.new(0.2), {BackgroundTransparency = 0}):Play()
+			end
+
+			if position and damage then
+				DamageDisplayModule.DisplayDamage(damage, position)
+			end
+
+			task.wait(0.3)
+
+			for _, marker in ipairs(Crosshair.ObjectHitMarker:GetChildren()) do
+				TweenService:Create(marker, TweenInfo.new(0.2), {BackgroundTransparency = 1}):Play()
+			end
+		end)
+	end
+end)
+
+-- ========================================
+-- EVENTOS DE PERSONAGEM
+-- ========================================
+
+Humanoid.Running:Connect(function(speed)
+	local state = Humanoid:GetState()
+
+	if state == Enum.HumanoidStateType.FallingDown or 
+		state == Enum.HumanoidStateType.Flying or 
+		state == Enum.HumanoidStateType.Freefall or 
+		state == Enum.HumanoidStateType.PlatformStanding then
+		var73_upvw = 0
+	else
+		var73_upvw = speed
+	end
+
+	if var51_upvw then
+		Sprint_upvr()
+	end
+end)
+
+Humanoid.Died:Connect(function()
+	if var108_upvw and var109_upvw then
+		coroutine.wrap(vibrateController_upvr)(var110_upvw, Enum.VibrationMotor.Large, math.random(800, 1100) / 1000, 0.2)
+	elseif var108_upvw then
+		coroutine.wrap(vibrateController_upvr)(var110_upvw, Enum.VibrationMotor.Small, math.random(800, 1100) / 1000, 0.2)
+	end
+
+	ResetWorkspace_upvr()
+	Humanoid:UnequipTools()
+	Unset_upvr()
+
+	for _, connection in ipairs(tbl_16_upvw) do
+		connection:Disconnect()
+	end
+	table.clear(tbl_16_upvw)
+end)
+
+Humanoid.Seated:Connect(function(active, seat)
+	if active and seat and seat:IsA("VehicleSeat") then
+		Humanoid:UnequipTools()
+	else
+		if seat and seat.Parent and seat.Parent.Parent and seat.Parent.Parent.Name == "Turrets" then return end
+		LocalPlayer.CameraMaxZoomDistance = StarterPlayer.CameraMaxZoomDistance
+	end
+end)
+
+local var566_upvw = nil
+
+Character.ChildAdded:Connect(function(child)
+	if LocalPlayer.Team and LocalPlayer.Team.Name == "Loading" then
+		task.wait()
+		Humanoid:UnequipTools()
+		return
+	end
+
+	if Character:GetAttribute("Downed") then
+		task.wait()
+		Humanoid:UnequipTools()
+		return
+	end
+
+	if not HumanoidRootPart or (HumanoidRootPart.Anchored and Character:GetAttribute("InDrone") ~= true) then
+		task.wait()
+		Humanoid:UnequipTools()
+		return
+	end
+
+	local function getAmmoForTool(tool)
+		if not tool then return 0 end
+		local ammo = tbl_upvr_3[tool]
+		if type(ammo) ~= "number" then
+			ammo = tbl_upvr_3[tool.Name]
+		end
+		if type(ammo) ~= "number" then
+			return 0
+		end
+		return ammo
+	end
+
+	if child:IsA("Tool") and ACS_Guns:FindFirstChild(child.Name) and Humanoid.Health > 0 and not Character:GetAttribute("HoldingBarrel") then
+		local canEquip = true
+
+		if Humanoid.Sit then
+			if Humanoid.SeatPart and not Humanoid.SeatPart:IsA("VehicleSeat") then
+				task.wait()
+				Humanoid:UnequipTools()
+				canEquip = false
+			end
+		end
+
+		if canEquip then
+			var566_upvw = child
+
+			if not var51_upvw then
+				UserInputService.MouseIconEnabled = false
+				GamepadService:DisableGamepadCursor()
+				LocalPlayer.CameraMode = Enum.CameraMode.LockFirstPerson
+
+				Setup_upvr(child)
+
+				tbl_14_upvw = {Character, ServerFolder, CurrentCamera, ClientFolder}
+
+				GunHUD = StatusUI:WaitForChild("GunHUD")
+				MobileUI = StatusUI:WaitForChild("Mobile")
+				GunHUD.Visible = true
+
+				any_GetLastInputType_result1_upvw = UserInputService:GetLastInputType()
+				Crosshair.CurrentGun.Value = child.Name
+
+				if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then
+					GunHUD.Position = UDim2.new(0.82, 0, 0.96, 0)
+					MobileUI.Visible = true
+
+					if var47_upvw and var47_upvw.FireModes and var47_upvw.FireModes.ChangeFiremode then
+						MobileUI.FireMode.Visible = true
+					else
+						MobileUI.FireMode.Visible = false
+					end
+
+					if var33_upvw and (var33_upvw:FindFirstChild("Aim2", true) or var33_upvw:FindFirstChild("Hybrid", true)) then
+						MobileUI.ScopeSwap.Visible = true
+					else
+						MobileUI.ScopeSwap.Visible = false
+					end
+				else
+					GunHUD.Position = UDim2.new(0.97, 0, 0.96, 0)
+					MobileUI.Visible = false
+				end
+
+				if LocalPlayer.SettingsFolder.crosshair.Value and child.Name ~= "Riot Shield" then
+					if child.Name == "Binoculars" then
+						Crosshair.Visible = false
+						GunHUD.Visible = false
+					else
+						Crosshair.Visible = true
+					end
+				else
+					Crosshair.Visible = false
+					if child.Name == "Riot Shield" or child.Name == "Binoculars" then
+						GunHUD.Visible = false
+					end
+				end
+
+				Update_Gui_upvr(true)
+
+				local ammoCount = getAmmoForTool(child)
+
+				if ammoCount <= 0 then
+					if child.Name == "RPG" and var33_upvw and var33_upvw:FindFirstChild("Rocket", true) then
+						local rocket = var33_upvw:FindFirstChild("Rocket", true)
+						if rocket and rocket:IsA("BasePart") then
+							rocket.Transparency = 1
+						end
+					end
+					reloadGun()
+				else
+					local chambered = false
+					if var64_upvw and var64_upvw.Value ~= nil then
+						chambered = var64_upvw.Value
+					end
+
+					if not chambered and ammoCount > 0 then
+						chamberGun()
+						return
+					end
+
+					task.delay(0.1, function()
+						if var51_upvw and CameraViewModel and CameraViewModel:FindFirstChild("AimUp") then
+							pcall(function() CameraViewModel.AimUp:Play() end)
+						end
+					end)
+
+					EquipAnim()
+					Sprint_upvr()
+				end
+			else
+				Unset_upvr()
+				Setup_upvr(var566_upvw)
+			end
+		end
+	end
+end)
+
+Character.ChildRemoved:Connect(function(child)
+	if child == var32_upvw and var51_upvw then
+		Unset_upvr()
+	end
+end)
+
+-- ========================================
+-- SISTEMA DE INPUT
+-- ========================================
+
+local function changeFireMode_upvr()
+	if not var51_upvw or not var47_upvw then return end
+	if not var47_upvw.FireModes or not var47_upvw.FireModes.ChangeFiremode then return end
+
+	local modes = var47_upvw.FireModes
+	local currentMode = var47_upvw.Mode
+
+	if currentMode == "Semi" and modes.Automatic then
+		var47_upvw.Mode = "Auto"
+	elseif currentMode == "Auto" and modes.Burst then
+		var47_upvw.Mode = "Burst"
+	elseif currentMode == "Burst" and modes.Semi then
+		var47_upvw.Mode = "Semi"
+	elseif currentMode == "Auto" and modes.Semi then
+		var47_upvw.Mode = "Semi"
+	elseif currentMode == "Semi" and modes.Burst then
+		var47_upvw.Mode = "Burst"
+	end
+
+	CameraViewModel.Click:Play()
+	Update_Gui_upvr()
+
+	print(string.format("[ACS Client] Fire mode changed to: %s", var47_upvw.Mode))
+end
+
+local var778_upvw
+
+local function swapGunScope_upvr()
+	if not var51_upvw or not var33_upvw then return end
+
+	local scopePivot = var33_upvw:FindFirstChild("ScopePivot", true)
+	if not scopePivot or not scopePivot:FindFirstChild("PivotWeld") then return end
+
+	if var72_upvw == 1 then
+		var72_upvw = 2
+		var778_upvw = TweenService:Create(scopePivot.PivotWeld, TweenInfo.new(0.15), {
+			C1 = CFrame.new(0, 0, 0) * CFrame.Angles(math.pi/2, 0, 0)
+		})
+		var778_upvw:Play()
+	else
+		var72_upvw = 1
+		var778_upvw = TweenService:Create(scopePivot.PivotWeld, TweenInfo.new(0.15), {
+			C1 = CFrame.new()
+		})
+		var778_upvw:Play()
+	end
+
+	if var80_upvw then
+		local targetFOV = 70
+		if var72_upvw == 2 then
+			if var32_upvw:GetAttribute("ChangeFOV2") then
+				targetFOV = var32_upvw:GetAttribute("ChangeFOV2").Y
+			elseif var47_upvw.ChangeFOV2 then
+				targetFOV = var47_upvw.ChangeFOV2[2]
+			end
+		else
+			if var32_upvw:GetAttribute("ChangeFOV") then
+				targetFOV = var32_upvw:GetAttribute("ChangeFOV").Y
+			elseif var47_upvw.ChangeFOV then
+				targetFOV = var47_upvw.ChangeFOV[2]
+			end
+		end
+
+		TweenFOV(targetFOV, 120)
+
+		if var47_upvw.FocusOnSight2 or var32_upvw:GetAttribute("FocusOnSight2") then
+			if var72_upvw == 2 then
+				tbl_17_upvr.AimShow:Play()
+			else
+				tbl_17_upvr.AimHide:Play()
+			end
+		end
+	end
+end
+
+-- Mobile Controls
+if MobileUI then
+	MobileUI:WaitForChild("Fire").MouseButton1Down:Connect(function()
+		any_GetLastInputType_result1_upvw = UserInputService:GetLastInputType()
+		if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch then
+			fireGun_upvr(nil)
+		end
+	end)
+
+	MobileUI.Fire.MouseButton1Up:Connect(function()
+		any_GetLastInputType_result1_upvw = UserInputService:GetLastInputType()
+		if any_GetLastInputType_result1_upvw == Enum.UserInputType.Touch and var51_upvw then
+			var75_upvw = false
+		end
+	end)
+
+	MobileUI:WaitForChild("Reload").InputBegan:Connect(reloadGun)
+	MobileUI:WaitForChild("Aim").InputBegan:Connect(function()
+		aimGun_upvr(any_GetLastInputType_result1_upvw)
+	end)
+	MobileUI:WaitForChild("ScopeSwap").InputBegan:Connect(swapGunScope_upvr)
+	MobileUI:WaitForChild("FireMode").InputBegan:Connect(changeFireMode_upvr)
+end
+
+-- Keyboard/Mouse/Gamepad Controls
+UserInputService.InputBegan:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+
+	var110_upvw = input
+	var108_upvw = HapticService:IsVibrationSupported(input.UserInputType)
+
+	if var108_upvw then
+		var109_upvw = HapticService:IsMotorSupported(input.UserInputType, Enum.VibrationMotor.Large)
+	end
+
+	if input.KeyCode == Enum.KeyCode.ButtonR2 or input.UserInputType == Enum.UserInputType.MouseButton1 then
+		fireGun_upvr(input)
+	end
+
+	if input.KeyCode == Enum.KeyCode.ButtonL2 or input.UserInputType == Enum.UserInputType.MouseButton2 then
+		aimGun_upvr(input)
+	end
+
+	if input.KeyCode == Enum.KeyCode.ButtonX or input.KeyCode == Enum.KeyCode.R then
+		if var51_upvw then
+			reloadGun()
+		end
+	end
+
+	if input.KeyCode == Enum.KeyCode.ButtonY or input.KeyCode == Enum.KeyCode.F then
+		if var51_upvw and not var81_upvw then
+			chamberGun()
+		end
+	end
+
+	if input.KeyCode == Enum.KeyCode.DPadUp or input.KeyCode == Enum.KeyCode.T then
+		if var51_upvw then
+			if var108_upvw then
+				coroutine.wrap(vibrateController_upvr)(input, Enum.VibrationMotor.Small, math.random(100, 200) / 1000, 0.1)
+			end
+			swapGunScope_upvr()
+		end
+	end
+
+	if input.KeyCode == Enum.KeyCode.DPadDown or input.KeyCode == Enum.KeyCode.V then
+		if var51_upvw and var47_upvw and var47_upvw.FireModes and var47_upvw.FireModes.ChangeFiremode then
+			if var108_upvw then
+				coroutine.wrap(vibrateController_upvr)(input, Enum.VibrationMotor.Small, math.random(100, 200) / 1000, 0.1)
+			end
+			changeFireMode_upvr()
+		end
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input, gameProcessed)
+	if gameProcessed then return end
+
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		if var51_upvw then
+			var75_upvw = false
+		end
+	end
+end)
+
+LocalPlayer:GetMouse().Button1Up:Connect(function()
+	if var51_upvw then
+		var75_upvw = false
+	end
+end)
+
+-- ========================================
+-- RENDER LOOP
+-- ========================================
+
+local var576_upvw = 0
+local var577_upvw = 0
+local var578_upvw = 0
+local var579_upvw = 0
+local var580_upvw = 0
+local var581_upvw = 0
+local var583_upvw = 0.25
+local var589_upvw = 1
+local tick_result1_3_upvw = tick()
+local new_upvr_result1_upvw = CFrame.new()
+local time_result1_3_upvw = time()
+
+local new_upvr_5_result1_upvw_2 = UDim2.new()
+local var11_result1_upvw = UDim2.new()
+local new_upvr_5_result1_upvw = UDim2.new()
+local var11_result1_upvw_2 = UDim2.new()
+
+RunService.RenderStepped:Connect(function(deltaTime)
+	pcall(function() 
+		if HeadMovement_upvr then 
+			HeadMovement_upvr() 
+		end 
+	end)
+
+	if not var51_upvw then return end
+
+	local punchRecover = (var47_upvw and var47_upvw.PunchRecover) or 5
+	new_upvr_result1_upvw_2 = new_upvr_result1_upvw_2:Lerp(CFrame.new(), 1 - math.exp(-punchRecover * 60 * math.max(deltaTime, 1/120)))
+
+	local cam = CurrentCamera or workspace.CurrentCamera
+	if not cam or not cam.CFrame then return end
+
+	local lookVector = cam.CFrame.LookVector
+	local lx, ly, lz = lookVector.X, math.clamp(lookVector.Y, -1, 1), lookVector.Z
+	local yaw = math.atan2(lx, lz)
+	local pitch = math.asin(ly)
+
+	local yawDelta = var576_upvw - yaw
+	local pitchDelta = var577_upvw - pitch
+
+	if math.abs(yawDelta) >= 1 then yawDelta = 0 end
+	if math.abs(pitchDelta) >= 1 then pitchDelta = 0 end
+
+	var578_upvw = var578_upvw * 0.5 + pitchDelta * 0.5
+	var579_upvw = var579_upvw * 0.5 + yawDelta * 0.5
+
+	var576_upvw = yaw
+	var577_upvw = pitch
+
+	if any_new_result1_3_upvr then
+		any_new_result1_3_upvr.t = Vector3.new(yawDelta, pitchDelta, var580_upvw)
+	end
+
+	local swayX = (any_new_result1_3_upvr and any_new_result1_3_upvr.p and any_new_result1_3_upvr.p.X) and any_new_result1_3_upvr.p.X * 5 or 0
+
+	local runWalkSpeed = (Config and Config.RunWalkSpeed) or 16
+	local movementRatio = 0
+	if runWalkSpeed ~= 0 then
+		movementRatio = var73_upvw and (var73_upvw / runWalkSpeed) or 0
+	end
+
+	if any_new_result1_2_upvr then
+		any_new_result1_2_upvr.t = Vector3.new(
+			math.sin((var581_upvw or 0) * 3) * movementRatio,
+			math.cos((var581_upvw or 0) * 3) * movementRatio,
+			var583_upvw
+		)
+	end
+
+	if LocalPlayer and LocalPlayer.SettingsFolder and LocalPlayer.SettingsFolder.crosshair
+		and LocalPlayer.SettingsFolder.crosshair.Value and Crosshair and Crosshair.CurrentGun
+		and Crosshair.CurrentGun.Value ~= "Riot Shield" then
+		if Crosshair.CurrentGun.Value ~= "Binoculars" then
+			if Crosshair.Visible ~= nil then Crosshair.Visible = true end
+
+			local spreadBase = var61_upvw or 0
+			local spreadSize = (math.clamp(spreadBase * 1.2 + 1, 5, 50) + math.clamp(var73_upvw or 0, 1, 25)) / 50 / 10
+			local lerpAmt = 1 - math.exp(-30 * math.max(deltaTime, 1/120))
+
+			if Crosshair.Up and Crosshair.Up.Position then 
+				new_upvr_5_result1_upvw_2 = new_upvr_5_result1_upvw_2:Lerp(UDim2.new(0.5, 0, 0.5 - spreadSize, 0), lerpAmt)
+				Crosshair.Up.Position = new_upvr_5_result1_upvw_2
+			end
+			if Crosshair.Down and Crosshair.Down.Position then 
+				var11_result1_upvw = var11_result1_upvw:Lerp(UDim2.new(0.5, 0, 0.5 + spreadSize, 0), lerpAmt)
+				Crosshair.Down.Position = var11_result1_upvw
+			end
+			if Crosshair.Left and Crosshair.Left.Position then 
+				new_upvr_5_result1_upvw = new_upvr_5_result1_upvw:Lerp(UDim2.new(0.5 - spreadSize, 0, 0.5, 0), lerpAmt)
+				Crosshair.Left.Position = new_upvr_5_result1_upvw
+			end
+			if Crosshair.Right and Crosshair.Right.Position then 
+				var11_result1_upvw_2 = var11_result1_upvw_2:Lerp(UDim2.new(0.5 + spreadSize, 0, 0.5, 0), lerpAmt)
+				Crosshair.Right.Position = var11_result1_upvw_2
+			end
+
+			if tbl_17_upvr and tbl_17_upvr.CrosshairShow then
+				for _, tween in ipairs(tbl_17_upvr.CrosshairShow) do 
+					pcall(function() tween:Play() end) 
+				end
+			end
+		end
+	end
+
+	if var73_upvw and var73_upvw > 1 and Humanoid and Humanoid.WalkSpeed then
+		var589_upvw = Humanoid.WalkSpeed / 3
+		-- CORREÇÃO: Definir variáveis de teclas pressionadas ou usar UserInputService
+		local isPressingA = UserInputService:IsKeyDown(Enum.KeyCode.A)
+		local isPressingD = UserInputService:IsKeyDown(Enum.KeyCode.D)
+
+		if isPressingA then
+			var580_upvw = 0 + (var73_upvw * -0.2 / runWalkSpeed - 0) * 10
+		elseif isPressingD then
+			var580_upvw = 0 + (var73_upvw * 0.2 / runWalkSpeed - 0) * 10
+		else
+			var580_upvw = 0
+		end
+	else
+		var589_upvw = (var73_upvw and (var73_upvw / runWalkSpeed) or 0) + 0.5
+		var583_upvw = 0
+	end
+
+	local now = tick()
+	var581_upvw = (var581_upvw or 0) + (now - tick_result1_3_upvw) * var589_upvw
+	tick_result1_3_upvw = now
+
+	local sway_x = (any_new_result1_2_upvr and any_new_result1_2_upvr.p and any_new_result1_2_upvr.p.X) or 0
+	local sway_y = (any_new_result1_2_upvr and any_new_result1_2_upvr.p and any_new_result1_2_upvr.p.Y) or 0
+	local sway_z = (any_new_result1_2_upvr and any_new_result1_2_upvr.p and any_new_result1_2_upvr.p.Z) or 0
+	local rot_z = (any_new_result1_3_upvr and any_new_result1_3_upvr.p and any_new_result1_3_upvr.p.Z) or 0
+
+	new_upvr_result1_upvw = new_upvr_result1_upvw:Lerp(
+		CFrame.new(
+			sway_x / 220,
+			-sway_y / 180,
+			0
+		) * CFrame.new(
+			math.sin(var581_upvw * 1.75) * movementRatio / 220,
+			-math.cos(var581_upvw * 3.5) * movementRatio / 180,
+			0
+		) * CFrame.Angles(0, 0, sway_z / 50)
+			* CFrame.Angles(0, 0, rot_z / 20),
+		1 - math.exp(-80 * math.max(deltaTime, 1/120))
+	)
+
+	local rot_y = (any_new_result1_3_upvr and any_new_result1_3_upvr.p and any_new_result1_3_upvr.p.Y) or 0
+
+	if var90_upvw and var90_upvw.C0 then
+		var90_upvw.C0 = var90_upvw.C0:Lerp(
+			new_upvr_result1_upvw * CFrame.Angles(
+				rot_y * 5 * 0.0872,
+				-swayX * 0.0872,
+				0
+			),
+			1 - math.exp(-75 * math.max(deltaTime, 1/120))
+		)
+	end
+
+	if var61_upvw then
+		local timeSinceShot = tick() - (time_result1_3_upvw or 0)
+		local fireRate = var62_upvw or (var47_upvw and var47_upvw.FireRate) or 0.1
+		if timeSinceShot > (fireRate * 2) then
+			local minSpread = (var32_upvw and var32_upvw.GetAttribute and pcall(function() return var32_upvw:GetAttribute("MinSpread") end) and var32_upvw:GetAttribute("MinSpread")) or (var47_upvw and var47_upvw.MinSpread) or 0
+			var61_upvw = math.max(minSpread, (var61_upvw or 0) - ((var47_upvw and var47_upvw.AimInaccuracyStepAmount) or 0) / 5)
+			var60_upvw = math.max((var47_upvw and var47_upvw.MinRecoilPower) or 0, (var60_upvw or 0) - ((var47_upvw and var47_upvw.RecoilPowerStepAmount) or 0) / 4)
+		end
+	end
+
+	if var80_upvw then
+		local aimPart = (var33_upvw and var33_upvw:FindFirstChild("Aim", true)) or nil
+		local aim2Part = (var33_upvw and var33_upvw:FindFirstChild("Aim2", true)) or nil
+		local targetCFrame = nil
+
+		if var72_upvw == 2 and aim2Part and var88_upvw and var88_upvw.C1 and var88_upvw.C0 and CameraViewModel and CameraViewModel.CFrame then
+			local ok, res = pcall(function()
+				return var88_upvw.C1 * var88_upvw.C0:Inverse() * (new_upvr_result1_upvw_2 or CFrame.new()) * (aim2Part.CFrame:ToObjectSpace(CameraViewModel.CFrame))
+			end)
+			if ok and res then targetCFrame = res end
+		end
+
+		if not targetCFrame and aimPart and var88_upvw and var88_upvw.C1 and var88_upvw.C0 and CameraViewModel and CameraViewModel.CFrame then
+			local ok, res = pcall(function()
+				return var88_upvw.C1 * var88_upvw.C0:Inverse() * (new_upvr_result1_upvw_2 or CFrame.new()) * (aimPart.CFrame:ToObjectSpace(CameraViewModel.CFrame))
+			end)
+			if ok and res then targetCFrame = res end
+		end
+
+		if not targetCFrame and var88_upvw and var88_upvw.C1 and var88_upvw.C0 then
+			targetCFrame = var88_upvw.C1 * var88_upvw.C0:Inverse() * (new_upvr_result1_upvw_2 or CFrame.new()) * CFrame.new()
+		end
+
+		if targetCFrame and var88_upvw and var88_upvw.C1 then
+			var88_upvw.C1 = var88_upvw.C1:Lerp(targetCFrame, (1 - math.exp(-10 * math.max(deltaTime, 1/120))) * (var66_upvw or 1))
+		end
+	else
+		if var88_upvw and var88_upvw.C1 and var88_upvw.C0 then
+			var88_upvw.C1 = var88_upvw.C1:Lerp(var88_upvw.C0:Inverse() * (new_upvr_result1_upvw_2 or CFrame.new()) * CFrame.new(), (1 - math.exp(-10 * math.max(deltaTime, 1/120))) * (var66_upvw or 1))
+		end
+	end
+
+	if CameraViewModel and CameraViewModel.CFrame and cam and cam.CFrame then
+		local swayBase = (var32_upvw and var32_upvw.GetAttribute and pcall(function()return var32_upvw:GetAttribute("SwayBase") end) and var32_upvw:GetAttribute("SwayBase")) or (var47_upvw and var47_upvw.SwayBase) or 0.5
+		pcall(function()
+			CameraViewModel.CFrame = cam.CFrame * CFrame.new(0, 0, -0.5) * CFrame.Angles(
+				math.rad(swayBase * math.sin(tick() * 2.5)),
+				math.rad(swayBase * math.sin(tick() * 1.25)),
+				0
+			)
+		end)
+	end
+end)
+-- ========================================
+-- INICIALIZAÇÃO
+-- ========================================
+
+ResetWorkspace_upvr()
+
+for _, model in ipairs(GunModels:GetChildren()) do
+	for _, part in ipairs(model:GetDescendants()) do
+		if part.Name == "GlassLense" and part:IsA("BasePart") then
+			part:SetAttribute("OGTransparency", part.Transparency)
+		end
+	end
+end
+
+UserInputService.MouseIconEnabled = true
+
+
+-- ========================================
+-- DEBUG & LOGGING
+-- ========================================
+
+print("[ACS Client] Sistema carregado com sucesso!")
+print("[ACS Client] Versão: 4.0 - Reescrita Completa")
+
+-- ========================================
+-- EXPORTS
+-- ========================================
+
+return {
+	-- Estado
+	IsEquipped = function() return var51_upvw end,
+	IsAiming = function() return var80_upvw end,
+	IsSprinting = function() return var31_upvw end,
+	IsReloading = function() return var77_upvw end,
+	CanFire = function() return var75_upvw end,
+
+	-- Arma Atual
+	GetCurrentWeapon = function() return var32_upvw end,
+	GetCurrentClone = function() return var33_upvw end,
+	GetCurrentSettings = function() return var47_upvw end,
+
+	-- Munição
+	GetAmmo = function() 
+		if var32_upvw then
+			return tbl_upvr_3[var32_upvw] or 0
+		end
+		return 0
+	end,
+	GetMaxAmmo = function()
+		if var47_upvw then
+			return var47_upvw.Ammo or 30
+		end
+		return 30
+	end,
+	IsChambered = function()
+		if var64_upvw then
+			return var64_upvw.Value
+		end
+		return false
+	end,
+
+	-- Recuo e Precisão
+	GetCurrentSpread = function() return var61_upvw end,
+	GetRecoilPower = function() return var60_upvw end,
+
+	-- Ações
+	Reload = reloadGun,
+	Chamber = chamberGun,
+	Aim = aimGun_upvr,
+	Fire = fireGun_upvr,
+	ChangeFireMode = changeFireMode_upvr,
+	SwapScope = swapGunScope_upvr,
+
+	-- Sistema
+	Setup = Setup_upvr,
+	Unequip = Unset_upvr,
+	Cleanup = ResetWorkspace_upvr,
+}
